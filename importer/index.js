@@ -1,5 +1,6 @@
 import fs from 'fs';
 import util from 'util';
+import path from 'path';
 
 import { DirWatcher } from '../dirwatcher';
 import { parseToJSON } from '../utils';
@@ -14,41 +15,38 @@ export class Importer {
 
     constructor() {
         this.dirWatcher = new DirWatcher();
-        this.dirWatcher.watch('./data', 500);
+        this.dirWatcher.watch(this.DIR_NAME, 500);
 
-        this.dirWatcher.on('changed', (event) => {
-            this.cacheCollection[event.fileName] = event.data;
-            console.log('changed', this.cacheCollection);
+        this.dirWatcher.on('changed', (fileName) => {
+            if(this.cacheCollection[path.basename(fileName)]) {
+                this.cacheCollection[path.basename(fileName)].resolve(readFilePromise(fileName));
+            } else {
+                this.cacheCollection[path.basename(fileName)] = {promise: readFilePromise(fileName), resolve:()=>{}};
+            }
         });
     }
 
     import(path) {
-        if (this.cacheCollection[path]) {
-            console.log('get from cache');
-            return Promise.resolve(this.cacheCollection[path]);
+        if (!this.cacheCollection[path]) {
+            let resolve;
+
+            const promise = new Promise((res, rej) => {
+                resolve = res;
+            });
+
+            this.cacheCollection[path] = { promise, resolve };
         }
 
-        path = this.DIR_NAME + '/' + path;
-
-        console.log('return Promise');
-        return readFilePromise(path).then(res => parseToJSON(res));
+        return this.cacheCollection[path].promise.then(res => parseToJSON(res));
     }
 
     importSync(path) {
-        if (this.cacheCollection[path]) {
-            console.log('get from cache');
-            return this.cacheCollection[path];
-        }
-
         path = this.DIR_NAME + '/' + path;
 
         if (!fs.existsSync(path)) {
-            // TODO: throw error
-            console.log('doesn`t exist');
-            return null;
+            throw {message: `Path ${path} doesn't exist.`};
         }
 
-        console.log('get Sync');
-        return parseToJSON(fs.readFileSync(path)).length;
+        return parseToJSON(fs.readFileSync(path));
     }
 }
